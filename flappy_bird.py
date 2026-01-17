@@ -19,6 +19,8 @@ GREEN = (0, 200, 0)
 YELLOW = (255, 255, 0)
 RED = (255, 0, 0)
 ORANGE = (255, 165, 0)
+PURPLE = (147, 51, 234)
+CYAN = (0, 255, 255)
 
 # Bird settings
 BIRD_WIDTH = 34
@@ -95,8 +97,14 @@ class Bird:
         pygame.draw.circle(screen, (255, 200, 0), (int(self.x + 5), int(self.y + BIRD_HEIGHT // 2)), 8)
 
 class Enemy:
-    def __init__(self, x):
+    def __init__(self, x, enemy_type=None):
         self.x = x
+        # Randomly choose enemy type if not specified
+        if enemy_type is None:
+            self.enemy_type = random.choice(['spiky', 'square', 'wavy'])
+        else:
+            self.enemy_type = enemy_type
+
         # Random size for each enemy
         self.size = random.randint(ENEMY_SIZE_MIN, ENEMY_SIZE_MAX)
         # Random speed for each enemy
@@ -112,6 +120,8 @@ class Enemy:
         self.frame = 0
         # Random rotation speed for spikes
         self.spike_rotation_speed = random.uniform(0.02, 0.08)
+        # Wave pattern for wavy enemy
+        self.wave_offset = random.uniform(0, 2 * math.pi)
 
     def update(self):
         self.x -= self.velocity  # Use individual velocity
@@ -124,25 +134,32 @@ class Enemy:
         self.rect.height = self.size
 
     def draw(self, screen):
-        # Draw enemy as a red circular creature with spikes
         center_x = int(self.x + self.size // 2)
         center_y = int(self.y + self.size // 2)
 
+        if self.enemy_type == 'spiky':
+            self.draw_spiky(screen, center_x, center_y)
+        elif self.enemy_type == 'square':
+            self.draw_square(screen, center_x, center_y)
+        elif self.enemy_type == 'wavy':
+            self.draw_wavy(screen, center_x, center_y)
+
+    def draw_spiky(self, screen, center_x, center_y):
+        # Original spiky enemy (red with rotating spikes)
         # Draw spikes around the enemy
         num_spikes = 8
         for i in range(num_spikes):
             angle = (2 * math.pi * i / num_spikes) + (self.frame * self.spike_rotation_speed)
-            spike_length = self.size // 2 + int(self.size * 0.2)  # Spike length scales with size
+            spike_length = self.size // 2 + int(self.size * 0.2)
             end_x = center_x + math.cos(angle) * spike_length
             end_y = center_y + math.sin(angle) * spike_length
-            # Spike thickness scales with size
             spike_thickness = max(2, int(self.size * 0.1))
             pygame.draw.line(screen, (150, 0, 0), (center_x, center_y), (int(end_x), int(end_y)), spike_thickness)
 
         # Main body
         pygame.draw.circle(screen, RED, (center_x, center_y), self.size // 2)
 
-        # Eyes scale with size
+        # Eyes
         eye_offset = max(4, int(self.size * 0.2))
         eye_size = max(3, int(self.size * 0.13))
         pupil_size = max(2, int(self.size * 0.07))
@@ -150,6 +167,85 @@ class Enemy:
         pygame.draw.circle(screen, WHITE, (center_x + eye_offset, center_y - 3), eye_size)
         pygame.draw.circle(screen, BLACK, (center_x - eye_offset, center_y - 3), pupil_size)
         pygame.draw.circle(screen, BLACK, (center_x + eye_offset, center_y - 3), pupil_size)
+
+    def draw_square(self, screen, center_x, center_y):
+        # Square enemy (purple with pulsing outline)
+        half_size = self.size // 2
+
+        # Pulsing effect
+        pulse = math.sin(self.frame * 0.1) * 3
+        outline_size = int(4 + pulse)
+
+        # Draw outline (darker purple)
+        outline_rect = pygame.Rect(center_x - half_size - outline_size,
+                                   center_y - half_size - outline_size,
+                                   self.size + outline_size * 2,
+                                   self.size + outline_size * 2)
+        pygame.draw.rect(screen, (80, 20, 120), outline_rect)
+
+        # Main body (rotating square)
+        rotation = self.frame * self.spike_rotation_speed
+        corners = []
+        for i in range(4):
+            angle = rotation + (i * math.pi / 2) + math.pi / 4
+            corner_x = center_x + math.cos(angle) * half_size * 1.4
+            corner_y = center_y + math.sin(angle) * half_size * 1.4
+            corners.append((int(corner_x), int(corner_y)))
+        pygame.draw.polygon(screen, PURPLE, corners)
+
+        # Inner square (lighter)
+        inner_corners = []
+        for i in range(4):
+            angle = rotation + (i * math.pi / 2) + math.pi / 4
+            corner_x = center_x + math.cos(angle) * half_size * 0.7
+            corner_y = center_y + math.sin(angle) * half_size * 0.7
+            inner_corners.append((int(corner_x), int(corner_y)))
+        pygame.draw.polygon(screen, (200, 100, 255), inner_corners)
+
+        # Eyes
+        eye_offset = max(4, int(self.size * 0.15))
+        eye_size = max(2, int(self.size * 0.1))
+        pygame.draw.circle(screen, WHITE, (center_x - eye_offset, center_y), eye_size)
+        pygame.draw.circle(screen, WHITE, (center_x + eye_offset, center_y), eye_size)
+
+    def draw_wavy(self, screen, center_x, center_y):
+        # Wavy enemy (cyan with trailing wave effect)
+        # Draw trailing wave segments
+        num_segments = 5
+        for i in range(num_segments):
+            segment_x = center_x + i * (self.size // 3)
+            wave_y = center_y + math.sin((self.frame + i * 10) * 0.15 + self.wave_offset) * (self.size * 0.3)
+            segment_size = max(3, int(self.size // 2 - i * 2))
+            # Fade out trail
+            brightness = 255 - (i * 40)
+            color = (0, max(0, brightness), max(0, brightness))
+            pygame.draw.circle(screen, color, (int(segment_x), int(wave_y)), segment_size)
+
+        # Main body (brighter cyan)
+        pygame.draw.circle(screen, CYAN, (center_x, center_y), self.size // 2)
+
+        # Add some tentacle-like appendages
+        num_tentacles = 4
+        for i in range(num_tentacles):
+            angle = (2 * math.pi * i / num_tentacles) + (self.frame * 0.05)
+            tentacle_length = self.size // 2 + int(self.size * 0.3)
+            # Wavy tentacle
+            for j in range(3):
+                progress = j / 3
+                tent_x = center_x + math.cos(angle) * tentacle_length * progress
+                tent_y = center_y + math.sin(angle) * tentacle_length * progress
+                tent_y += math.sin((self.frame + j * 5) * 0.2) * 3
+                tent_size = max(1, int((self.size * 0.1) * (1 - progress)))
+                pygame.draw.circle(screen, (0, 200, 200), (int(tent_x), int(tent_y)), tent_size)
+
+        # Eyes
+        eye_offset = max(4, int(self.size * 0.2))
+        eye_size = max(3, int(self.size * 0.12))
+        pupil_size = max(2, int(self.size * 0.06))
+        pygame.draw.circle(screen, WHITE, (center_x - eye_offset, center_y - 2), eye_size)
+        pygame.draw.circle(screen, WHITE, (center_x + eye_offset, center_y - 2), eye_size)
+        pygame.draw.circle(screen, BLACK, (center_x - eye_offset, center_y - 2), pupil_size)
+        pygame.draw.circle(screen, BLACK, (center_x + eye_offset, center_y - 2), pupil_size)
 
     def is_off_screen(self):
         return self.x < -self.size
