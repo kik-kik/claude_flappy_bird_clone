@@ -2,6 +2,10 @@
 
 A simple Flappy Bird clone built with Python and Pygame. This is a dummy project used to play around with Claude Code and get more familiar with it as a tool.
 
+## Prompts
+
+prompts.md contains a list of prompts and a summary of the output produced by the model as the result.
+
 ## Installation
 
 1. Install the required dependencies:
