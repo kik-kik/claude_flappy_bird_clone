@@ -46,6 +46,83 @@ ENEMY_VELOCITY_MAX = 5  # Maximum speed
 ENEMY_SPAWN_MIN = 100  # Minimum Y position
 ENEMY_SPAWN_MAX = SCREEN_HEIGHT - 100  # Maximum Y position
 
+# Drop settings
+DROP_SIZE = 12  # Size of collectible drops
+DROP_FALL_SPEED = 2  # Speed drops fall
+DROP_VALUE = 20  # How much each drop fills the power-up bar (always 20 per drop)
+INITIAL_DROPS_NEEDED = 2  # Initial number of drops needed for first power-up
+DROP_PICKUP_RANGE = 25  # Pickup radius (larger than visual size for easier collection)
+
+# Power-up settings
+SHIELD_DURATION = 300  # Frames shield lasts (5 seconds)
+DOUBLE_SHOT_DURATION = 600  # Frames double shot lasts (10 seconds)
+FAST_FIRE_DURATION = 600  # Frames fast fire lasts (10 seconds)
+FAST_FIRE_HEAT_MULTIPLIER = 0.5  # Heat per shot when fast fire is active
+
+class Drop:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.rect = pygame.Rect(self.x, self.y, DROP_SIZE, DROP_SIZE)
+        # Random velocity in both x and y directions (reduced speed)
+        self.vx = random.uniform(-2, -0.5)  # Slower leftward velocity
+        self.vy = random.uniform(-2, 2)  # Slower vertical velocity
+        self.frame = 0
+
+    def update(self):
+        # Update position with velocity
+        self.x += self.vx
+        self.y += self.vy
+
+        # Bounce off top edge
+        if self.y < DROP_SIZE:
+            self.y = DROP_SIZE
+            self.vy = abs(self.vy)  # Reverse to downward
+
+        # Bounce off bottom edge
+        if self.y > SCREEN_HEIGHT - DROP_SIZE:
+            self.y = SCREEN_HEIGHT - DROP_SIZE
+            self.vy = -abs(self.vy)  # Reverse to upward
+
+        # Bounce off right edge
+        if self.x > SCREEN_WIDTH - DROP_SIZE:
+            self.x = SCREEN_WIDTH - DROP_SIZE
+            self.vx = -abs(self.vx)  # Reverse to leftward
+
+        # Update rect position
+        self.rect.x = self.x
+        self.rect.y = self.y
+        self.frame += 1
+
+    def draw(self, screen):
+        # Draw a glowing collectible gem with pulsing effect
+        pulse = math.sin(self.frame * 0.15) * 2
+        size = DROP_SIZE + int(pulse)
+
+        # Outer glow
+        pygame.draw.circle(screen, (100, 255, 100), (int(self.x), int(self.y)), size)
+        # Inner core
+        pygame.draw.circle(screen, (200, 255, 200), (int(self.x), int(self.y)), size - 3)
+        # Bright center
+        pygame.draw.circle(screen, WHITE, (int(self.x), int(self.y)), size - 6)
+
+    def is_off_screen(self):
+        # Only destroy when passing through left edge
+        return self.x < -DROP_SIZE
+
+    def collides_with(self, bird):
+        # Use distance-based collision for larger pickup range
+        bird_center_x = bird.x + BIRD_WIDTH // 2
+        bird_center_y = bird.y + BIRD_HEIGHT // 2
+        drop_center_x = self.x
+        drop_center_y = self.y
+
+        # Calculate distance between centers
+        distance = math.sqrt((bird_center_x - drop_center_x)**2 + (bird_center_y - drop_center_y)**2)
+
+        # Return true if within pickup range
+        return distance < DROP_PICKUP_RANGE
+
 class Particle:
     def __init__(self, x, y, color):
         self.x = x
@@ -295,12 +372,18 @@ class Game:
         self.bird = Bird()
         self.enemies = [Enemy(SCREEN_WIDTH + 200)]
         self.projectiles = []
+        self.drops = []  # Collectible drops
         self.score = 0
         self.game_over = False
         self.game_started = False
         self.particles = []
         self.heat = 0  # Current heat level
         self.heat_cooldown_timer = 0  # Timer for when cooldown starts
+        self.powerup_charge = 0  # Current charge toward power-up
+        self.powerup_menu_active = False  # Whether power-up selection menu is shown
+        self.active_powerups = {}  # Dictionary to track active power-ups and their durations
+        self.drops_needed = INITIAL_DROPS_NEEDED  # Number of drops needed for next power-up (increases each time)
+        # Possible power-ups: 'shield', 'double_shot', 'fast_fire'
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -311,15 +394,28 @@ class Game:
                     if not self.game_started:
                         self.game_started = True
                     if not self.game_over:
-                        self.bird.jump()
+                        if not self.powerup_menu_active:
+                            self.bird.jump()
                     else:
                         self.reset()
                 if event.key == pygame.K_x:
                     # Fire projectile
-                    if self.game_started and not self.game_over and self.heat < MAX_HEAT:
+                    if self.game_started and not self.game_over and not self.powerup_menu_active and self.heat < MAX_HEAT:
                         self.shoot_projectile()
-                        self.heat = min(MAX_HEAT, self.heat + HEAT_PER_SHOT)
+                        # Adjust heat based on active power-ups
+                        heat_to_add = HEAT_PER_SHOT
+                        if 'fast_fire' in self.active_powerups:
+                            heat_to_add *= FAST_FIRE_HEAT_MULTIPLIER
+                        self.heat = min(MAX_HEAT, self.heat + heat_to_add)
                         self.heat_cooldown_timer = HEAT_COOLDOWN_DELAY  # Reset cooldown timer
+                # Power-up selection keys (1, 2, 3)
+                if self.powerup_menu_active:
+                    if event.key == pygame.K_1:
+                        self.activate_powerup('shield')
+                    elif event.key == pygame.K_2:
+                        self.activate_powerup('double_shot')
+                    elif event.key == pygame.K_3:
+                        self.activate_powerup('fast_fire')
                 if event.key == pygame.K_ESCAPE:
                     return False
         return True
@@ -330,6 +426,28 @@ class Game:
         projectile_y = self.bird.y + BIRD_HEIGHT // 2
         self.projectiles.append(Projectile(projectile_x, projectile_y))
 
+        # If double shot is active, fire a second projectile above/below
+        if 'double_shot' in self.active_powerups:
+            offset = 15
+            self.projectiles.append(Projectile(projectile_x, projectile_y - offset))
+            self.projectiles.append(Projectile(projectile_x, projectile_y + offset))
+
+    def activate_powerup(self, powerup_type):
+        """Activate a power-up"""
+        if powerup_type == 'shield':
+            self.active_powerups['shield'] = SHIELD_DURATION
+        elif powerup_type == 'double_shot':
+            self.active_powerups['double_shot'] = DOUBLE_SHOT_DURATION
+        elif powerup_type == 'fast_fire':
+            self.active_powerups['fast_fire'] = FAST_FIRE_DURATION
+
+        # Reset power-up charge and close menu
+        self.powerup_charge = 0
+        self.powerup_menu_active = False
+
+        # Increase drops needed for next power-up
+        self.drops_needed += 1
+
     def update(self):
         # Always update particles, even during game over
         for particle in self.particles:
@@ -338,8 +456,28 @@ class Game:
         # Remove dead particles
         self.particles = [p for p in self.particles if not p.is_dead()]
 
+        # Always update drops (even when menu is open)
+        for drop in self.drops:
+            drop.update()
+
+        # Remove off-screen drops
+        self.drops = [d for d in self.drops if not d.is_off_screen()]
+
         if not self.game_started or self.game_over:
             return
+
+        # If power-up menu is active, pause game but allow menu interaction
+        if self.powerup_menu_active:
+            return
+
+        # Update active power-ups
+        powerups_to_remove = []
+        for powerup, duration in self.active_powerups.items():
+            self.active_powerups[powerup] = duration - 1
+            if self.active_powerups[powerup] <= 0:
+                powerups_to_remove.append(powerup)
+        for powerup in powerups_to_remove:
+            del self.active_powerups[powerup]
 
         # Update heat cooldown system
         if self.heat > 0:
@@ -353,11 +491,24 @@ class Game:
         # Update bird
         self.bird.update()
 
+        # Check drop collection
+        for drop in self.drops[:]:
+            if drop.collides_with(self.bird):
+                self.powerup_charge += DROP_VALUE
+                self.drops.remove(drop)
+                # Calculate max charge based on drops needed
+                max_charge = self.drops_needed * DROP_VALUE
+                # Open power-up menu when charge is full
+                if self.powerup_charge >= max_charge:
+                    self.powerup_menu_active = True
+
         # Check if bird hits ground or ceiling
         if self.bird.y > SCREEN_HEIGHT - BIRD_HEIGHT or self.bird.y < 0:
-            if not self.game_over:
-                self.create_collision_particles(self.bird.x + BIRD_WIDTH // 2, self.bird.y + BIRD_HEIGHT // 2)
-            self.game_over = True
+            # Shield protects from ground/ceiling
+            if 'shield' not in self.active_powerups:
+                if not self.game_over:
+                    self.create_collision_particles(self.bird.x + BIRD_WIDTH // 2, self.bird.y + BIRD_HEIGHT // 2)
+                self.game_over = True
 
         # Update projectiles
         for projectile in self.projectiles:
@@ -377,6 +528,8 @@ class Game:
                     self.create_enemy_explosion(enemy.x + enemy.size // 2, enemy.y + enemy.size // 2, enemy.enemy_type)
                     if enemy not in enemies_to_remove:
                         enemies_to_remove.append(enemy)
+                        # Spawn a drop at enemy location
+                        self.drops.append(Drop(enemy.x + enemy.size // 2, enemy.y + enemy.size // 2))
                     if projectile not in projectiles_to_remove:
                         projectiles_to_remove.append(projectile)
                     # Award points for destroying enemy
@@ -396,9 +549,11 @@ class Game:
 
             # Check collision
             if enemy.collides_with(self.bird):
-                if not self.game_over:
-                    self.create_collision_particles(self.bird.x + BIRD_WIDTH // 2, self.bird.y + BIRD_HEIGHT // 2)
-                self.game_over = True
+                # Shield protects from enemies
+                if 'shield' not in self.active_powerups:
+                    if not self.game_over:
+                        self.create_collision_particles(self.bird.x + BIRD_WIDTH // 2, self.bird.y + BIRD_HEIGHT // 2)
+                    self.game_over = True
 
             # Check if bird passed the enemy
             if not enemy.passed and enemy.x + enemy.size < self.bird.x:
@@ -473,6 +628,140 @@ class Game:
             label_text = self.small_font.render("HEAT", True, WHITE)
         self.screen.blit(label_text, (gauge_x + gauge_width + 10, gauge_y - 5))
 
+    def draw_powerup_bar(self):
+        """Draw the power-up charge bar"""
+        # Bar position and size (below heat gauge)
+        bar_x = 10
+        bar_y = 35
+        bar_width = 100
+        bar_height = 15
+
+        # Background (empty bar)
+        pygame.draw.rect(self.screen, (50, 50, 50), (bar_x, bar_y, bar_width, bar_height))
+        pygame.draw.rect(self.screen, WHITE, (bar_x, bar_y, bar_width, bar_height), 2)
+
+        # Calculate max charge based on drops needed
+        max_charge = self.drops_needed * DROP_VALUE
+
+        # Fill (power-up charge level)
+        charge_percentage = min(1.0, self.powerup_charge / max_charge)
+        fill_width = int(bar_width * charge_percentage)
+
+        # Color: green with pulsing effect when full
+        if charge_percentage >= 1.0:
+            pulse = int(abs(math.sin(pygame.time.get_ticks() * 0.01)) * 100)
+            color = (100 + pulse, 255, 100 + pulse)
+        else:
+            color = (100, 255, 100)
+
+        if fill_width > 0:
+            pygame.draw.rect(self.screen, color, (bar_x, bar_y, fill_width, bar_height))
+
+        # Label shows drops collected / drops needed
+        drops_collected = int(self.powerup_charge / DROP_VALUE)
+        if charge_percentage >= 1.0:
+            label_text = self.small_font.render("READY!", True, GREEN)
+        else:
+            label_text = self.small_font.render(f"{drops_collected}/{self.drops_needed}", True, WHITE)
+        self.screen.blit(label_text, (bar_x + bar_width + 10, bar_y - 5))
+
+    def draw_active_powerups(self):
+        """Draw icons for active power-ups"""
+        icon_x = SCREEN_WIDTH - 120
+        icon_y = 10
+        icon_size = 30
+        spacing = 5
+
+        y_offset = 0
+        for powerup, duration in self.active_powerups.items():
+            # Draw background
+            pygame.draw.rect(self.screen, (50, 50, 50), (icon_x, icon_y + y_offset, icon_size, icon_size))
+            pygame.draw.rect(self.screen, WHITE, (icon_x, icon_y + y_offset, icon_size, icon_size), 2)
+
+            # Draw icon based on type
+            center_x = icon_x + icon_size // 2
+            center_y = icon_y + y_offset + icon_size // 2
+
+            if powerup == 'shield':
+                # Shield icon (hexagon)
+                points = []
+                for i in range(6):
+                    angle = math.pi / 3 * i
+                    px = center_x + math.cos(angle) * 10
+                    py = center_y + math.sin(angle) * 10
+                    points.append((int(px), int(py)))
+                pygame.draw.polygon(self.screen, CYAN, points)
+            elif powerup == 'double_shot':
+                # Double shot icon (two circles)
+                pygame.draw.circle(self.screen, YELLOW, (center_x - 5, center_y), 5)
+                pygame.draw.circle(self.screen, YELLOW, (center_x + 5, center_y), 5)
+            elif powerup == 'fast_fire':
+                # Fast fire icon (three arrows)
+                for i in range(3):
+                    offset = (i - 1) * 6
+                    pygame.draw.polygon(self.screen, ORANGE, [
+                        (center_x - 5, center_y + offset),
+                        (center_x + 5, center_y + offset),
+                        (center_x + 8, center_y + offset + 3),
+                        (center_x + 5, center_y + offset),
+                        (center_x + 8, center_y + offset - 3)
+                    ])
+
+            # Draw duration bar
+            duration_percentage = duration / (SHIELD_DURATION if powerup == 'shield' else DOUBLE_SHOT_DURATION)
+            bar_width = int(icon_size * duration_percentage)
+            pygame.draw.rect(self.screen, GREEN, (icon_x, icon_y + y_offset + icon_size - 3, bar_width, 3))
+
+            y_offset += icon_size + spacing
+
+    def draw_powerup_menu(self):
+        """Draw the power-up selection menu"""
+        # Semi-transparent overlay
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        overlay.set_alpha(180)
+        overlay.fill(BLACK)
+        self.screen.blit(overlay, (0, 0))
+
+        # Menu background
+        menu_width = 350
+        menu_height = 300
+        menu_x = (SCREEN_WIDTH - menu_width) // 2
+        menu_y = (SCREEN_HEIGHT - menu_height) // 2
+
+        pygame.draw.rect(self.screen, (30, 30, 30), (menu_x, menu_y, menu_width, menu_height))
+        pygame.draw.rect(self.screen, WHITE, (menu_x, menu_y, menu_width, menu_height), 3)
+
+        # Title
+        title_text = self.font.render("POWER-UP", True, GREEN)
+        self.screen.blit(title_text, (menu_x + menu_width // 2 - 80, menu_y + 20))
+
+        # Power-up options
+        option_y = menu_y + 80
+        option_height = 50
+        option_spacing = 10
+
+        options = [
+            ("1. SHIELD", "Temporary invincibility", CYAN),
+            ("2. DOUBLE SHOT", "Fire 3 projectiles", YELLOW),
+            ("3. FAST FIRE", "Reduced heat buildup", ORANGE)
+        ]
+
+        for i, (title, description, color) in enumerate(options):
+            y = option_y + i * (option_height + option_spacing)
+
+            # Option background
+            pygame.draw.rect(self.screen, (50, 50, 50), (menu_x + 20, y, menu_width - 40, option_height))
+            pygame.draw.rect(self.screen, color, (menu_x + 20, y, menu_width - 40, option_height), 2)
+
+            # Title
+            title_text = self.small_font.render(title, True, color)
+            self.screen.blit(title_text, (menu_x + 30, y + 5))
+
+            # Description
+            desc_font = pygame.font.Font(None, 20)
+            desc_text = desc_font.render(description, True, WHITE)
+            self.screen.blit(desc_text, (menu_x + 30, y + 30))
+
     def draw(self):
         # Background
         self.screen.fill(BLUE)
@@ -485,12 +774,24 @@ class Game:
         for projectile in self.projectiles:
             projectile.draw(self.screen)
 
+        # Draw drops
+        for drop in self.drops:
+            drop.draw(self.screen)
+
         # Draw particles (before bird so they appear behind)
         for particle in self.particles:
             particle.draw(self.screen)
 
         # Draw bird
         self.bird.draw(self.screen)
+
+        # Draw shield effect around bird if active
+        if 'shield' in self.active_powerups:
+            shield_pulse = math.sin(pygame.time.get_ticks() * 0.01) * 3
+            shield_radius = BIRD_HEIGHT // 2 + 8 + int(shield_pulse)
+            pygame.draw.circle(self.screen, CYAN,
+                             (int(self.bird.x + BIRD_WIDTH // 2), int(self.bird.y + BIRD_HEIGHT // 2)),
+                             shield_radius, 3)
 
         # Draw score
         score_text = self.font.render(str(self.score), True, WHITE)
@@ -499,6 +800,12 @@ class Game:
         # Draw cooldown gauge
         if self.game_started and not self.game_over:
             self.draw_cooldown_gauge()
+            self.draw_powerup_bar()
+            self.draw_active_powerups()
+
+        # Draw power-up menu if active
+        if self.powerup_menu_active:
+            self.draw_powerup_menu()
 
         # Draw instructions or game over
         if not self.game_started:
