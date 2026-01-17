@@ -29,6 +29,11 @@ BIRD_X = 50
 GRAVITY = 0.5
 JUMP_STRENGTH = -10
 
+# Projectile settings
+PROJECTILE_SIZE = 6
+PROJECTILE_SPEED = 8
+PROJECTILE_COLOR = (255, 255, 100)
+
 # Enemy settings
 ENEMY_SIZE_MIN = 20  # Minimum enemy size
 ENEMY_SIZE_MAX = 40  # Maximum enemy size
@@ -75,6 +80,26 @@ class Particle:
 
     def is_dead(self):
         return self.life <= 0
+
+class Projectile:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.rect = pygame.Rect(self.x, self.y, PROJECTILE_SIZE, PROJECTILE_SIZE)
+        self.speed = PROJECTILE_SPEED
+
+    def update(self):
+        self.x += self.speed
+        self.rect.x = self.x
+
+    def draw(self, screen):
+        # Draw projectile as a glowing yellow circle with trail effect
+        pygame.draw.circle(screen, PROJECTILE_COLOR, (int(self.x), int(self.y)), PROJECTILE_SIZE)
+        # Add a glow effect
+        pygame.draw.circle(screen, (255, 255, 200), (int(self.x), int(self.y)), PROJECTILE_SIZE - 2)
+
+    def is_off_screen(self):
+        return self.x > SCREEN_WIDTH
 
 class Bird:
     def __init__(self):
@@ -265,6 +290,7 @@ class Game:
     def reset(self):
         self.bird = Bird()
         self.enemies = [Enemy(SCREEN_WIDTH + 200)]
+        self.projectiles = []
         self.score = 0
         self.game_over = False
         self.game_started = False
@@ -282,9 +308,19 @@ class Game:
                         self.bird.jump()
                     else:
                         self.reset()
+                if event.key == pygame.K_x:
+                    # Fire projectile
+                    if self.game_started and not self.game_over:
+                        self.shoot_projectile()
                 if event.key == pygame.K_ESCAPE:
                     return False
         return True
+
+    def shoot_projectile(self):
+        """Create a new projectile from the bird's position"""
+        projectile_x = self.bird.x + BIRD_WIDTH
+        projectile_y = self.bird.y + BIRD_HEIGHT // 2
+        self.projectiles.append(Projectile(projectile_x, projectile_y))
 
     def update(self):
         # Always update particles, even during game over
@@ -305,6 +341,37 @@ class Game:
             if not self.game_over:
                 self.create_collision_particles(self.bird.x + BIRD_WIDTH // 2, self.bird.y + BIRD_HEIGHT // 2)
             self.game_over = True
+
+        # Update projectiles
+        for projectile in self.projectiles:
+            projectile.update()
+
+        # Remove off-screen projectiles
+        self.projectiles = [p for p in self.projectiles if not p.is_off_screen()]
+
+        # Check projectile-enemy collisions
+        enemies_to_remove = []
+        projectiles_to_remove = []
+
+        for projectile in self.projectiles:
+            for enemy in self.enemies:
+                if projectile.rect.colliderect(enemy.rect):
+                    # Create explosion particles at enemy location
+                    self.create_enemy_explosion(enemy.x + enemy.size // 2, enemy.y + enemy.size // 2, enemy.enemy_type)
+                    if enemy not in enemies_to_remove:
+                        enemies_to_remove.append(enemy)
+                    if projectile not in projectiles_to_remove:
+                        projectiles_to_remove.append(projectile)
+                    # Award points for destroying enemy
+                    self.score += 1
+
+        # Remove destroyed enemies and projectiles
+        for enemy in enemies_to_remove:
+            if enemy in self.enemies:
+                self.enemies.remove(enemy)
+        for projectile in projectiles_to_remove:
+            if projectile in self.projectiles:
+                self.projectiles.remove(projectile)
 
         # Update enemies
         for enemy in self.enemies:
@@ -337,6 +404,22 @@ class Game:
             color = random.choice([YELLOW, RED, ORANGE, (255, 200, 0)])
             self.particles.append(Particle(x, y, color))
 
+    def create_enemy_explosion(self, x, y, enemy_type):
+        """Create an explosion of particles when enemy is destroyed"""
+        # Create more particles for a bigger explosion
+        num_particles = random.randint(40, 60)
+        for _ in range(num_particles):
+            # Use colors matching the enemy type
+            if enemy_type == 'spiky':
+                color = random.choice([RED, ORANGE, (255, 100, 100)])
+            elif enemy_type == 'square':
+                color = random.choice([PURPLE, (200, 100, 255), (147, 51, 234)])
+            elif enemy_type == 'wavy':
+                color = random.choice([CYAN, (0, 200, 200), (100, 255, 255)])
+            else:
+                color = random.choice([WHITE, (200, 200, 200)])
+            self.particles.append(Particle(x, y, color))
+
     def draw(self):
         # Background
         self.screen.fill(BLUE)
@@ -344,6 +427,10 @@ class Game:
         # Draw enemies
         for enemy in self.enemies:
             enemy.draw(self.screen)
+
+        # Draw projectiles
+        for projectile in self.projectiles:
+            projectile.draw(self.screen)
 
         # Draw particles (before bird so they appear behind)
         for particle in self.particles:
@@ -360,6 +447,8 @@ class Game:
         if not self.game_started:
             start_text = self.small_font.render("Press SPACE to start", True, WHITE)
             self.screen.blit(start_text, (SCREEN_WIDTH // 2 - 120, SCREEN_HEIGHT // 2))
+            shoot_text = self.small_font.render("Press X to shoot", True, WHITE)
+            self.screen.blit(shoot_text, (SCREEN_WIDTH // 2 - 90, SCREEN_HEIGHT // 2 + 30))
 
         if self.game_over:
             game_over_text = self.font.render("GAME OVER", True, WHITE)
