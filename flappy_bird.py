@@ -28,8 +28,10 @@ GRAVITY = 0.5
 JUMP_STRENGTH = -10
 
 # Enemy settings
-ENEMY_SIZE = 30  # Similar size to bird
-ENEMY_VELOCITY = 3
+ENEMY_SIZE_MIN = 20  # Minimum enemy size
+ENEMY_SIZE_MAX = 40  # Maximum enemy size
+ENEMY_VELOCITY_MIN = 2  # Minimum speed
+ENEMY_VELOCITY_MAX = 5  # Maximum speed
 ENEMY_SPAWN_MIN = 100  # Minimum Y position
 ENEMY_SPAWN_MAX = SCREEN_HEIGHT - 100  # Maximum Y position
 
@@ -95,50 +97,62 @@ class Bird:
 class Enemy:
     def __init__(self, x):
         self.x = x
+        # Random size for each enemy
+        self.size = random.randint(ENEMY_SIZE_MIN, ENEMY_SIZE_MAX)
+        # Random speed for each enemy
+        self.velocity = random.uniform(ENEMY_VELOCITY_MIN, ENEMY_VELOCITY_MAX)
         self.y = random.randint(ENEMY_SPAWN_MIN, ENEMY_SPAWN_MAX)
         self.passed = False
-        self.rect = pygame.Rect(self.x, self.y, ENEMY_SIZE, ENEMY_SIZE)
-        # Add some variation to enemy movement
+        self.rect = pygame.Rect(self.x, self.y, self.size, self.size)
+        # Add some variation to enemy movement with wider range
         self.bob_offset = random.uniform(0, 2 * math.pi)
-        self.bob_speed = random.uniform(0.05, 0.1)
-        self.bob_amplitude = random.randint(20, 40)
+        self.bob_speed = random.uniform(0.03, 0.15)  # More speed variation
+        self.bob_amplitude = random.randint(10, 60)  # Wider range of motion
         self.initial_y = self.y
         self.frame = 0
+        # Random rotation speed for spikes
+        self.spike_rotation_speed = random.uniform(0.02, 0.08)
 
     def update(self):
-        self.x -= ENEMY_VELOCITY
+        self.x -= self.velocity  # Use individual velocity
         # Add bobbing motion
         self.frame += 1
         self.y = self.initial_y + math.sin(self.frame * self.bob_speed + self.bob_offset) * self.bob_amplitude
         self.rect.x = self.x
         self.rect.y = self.y
+        self.rect.width = self.size
+        self.rect.height = self.size
 
     def draw(self, screen):
         # Draw enemy as a red circular creature with spikes
-        center_x = int(self.x + ENEMY_SIZE // 2)
-        center_y = int(self.y + ENEMY_SIZE // 2)
+        center_x = int(self.x + self.size // 2)
+        center_y = int(self.y + self.size // 2)
 
         # Draw spikes around the enemy
         num_spikes = 8
         for i in range(num_spikes):
-            angle = (2 * math.pi * i / num_spikes) + (self.frame * 0.05)
-            spike_length = ENEMY_SIZE // 2 + 5
+            angle = (2 * math.pi * i / num_spikes) + (self.frame * self.spike_rotation_speed)
+            spike_length = self.size // 2 + int(self.size * 0.2)  # Spike length scales with size
             end_x = center_x + math.cos(angle) * spike_length
             end_y = center_y + math.sin(angle) * spike_length
-            pygame.draw.line(screen, (150, 0, 0), (center_x, center_y), (int(end_x), int(end_y)), 3)
+            # Spike thickness scales with size
+            spike_thickness = max(2, int(self.size * 0.1))
+            pygame.draw.line(screen, (150, 0, 0), (center_x, center_y), (int(end_x), int(end_y)), spike_thickness)
 
         # Main body
-        pygame.draw.circle(screen, RED, (center_x, center_y), ENEMY_SIZE // 2)
+        pygame.draw.circle(screen, RED, (center_x, center_y), self.size // 2)
 
-        # Eyes
-        eye_offset = 6
-        pygame.draw.circle(screen, WHITE, (center_x - eye_offset, center_y - 3), 4)
-        pygame.draw.circle(screen, WHITE, (center_x + eye_offset, center_y - 3), 4)
-        pygame.draw.circle(screen, BLACK, (center_x - eye_offset, center_y - 3), 2)
-        pygame.draw.circle(screen, BLACK, (center_x + eye_offset, center_y - 3), 2)
+        # Eyes scale with size
+        eye_offset = max(4, int(self.size * 0.2))
+        eye_size = max(3, int(self.size * 0.13))
+        pupil_size = max(2, int(self.size * 0.07))
+        pygame.draw.circle(screen, WHITE, (center_x - eye_offset, center_y - 3), eye_size)
+        pygame.draw.circle(screen, WHITE, (center_x + eye_offset, center_y - 3), eye_size)
+        pygame.draw.circle(screen, BLACK, (center_x - eye_offset, center_y - 3), pupil_size)
+        pygame.draw.circle(screen, BLACK, (center_x + eye_offset, center_y - 3), pupil_size)
 
     def is_off_screen(self):
-        return self.x < -ENEMY_SIZE
+        return self.x < -self.size
 
     def collides_with(self, bird):
         return bird.rect.colliderect(self.rect)
@@ -207,7 +221,7 @@ class Game:
                 self.game_over = True
 
             # Check if bird passed the enemy
-            if not enemy.passed and enemy.x + ENEMY_SIZE < self.bird.x:
+            if not enemy.passed and enemy.x + enemy.size < self.bird.x:
                 enemy.passed = True
                 self.score += 1
 
