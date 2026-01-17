@@ -27,10 +27,11 @@ BIRD_X = 50
 GRAVITY = 0.5
 JUMP_STRENGTH = -10
 
-# Pipe settings
-PIPE_WIDTH = 70
-PIPE_GAP = 150
-PIPE_VELOCITY = 3
+# Enemy settings
+ENEMY_SIZE = 30  # Similar size to bird
+ENEMY_VELOCITY = 3
+ENEMY_SPAWN_MIN = 100  # Minimum Y position
+ENEMY_SPAWN_MAX = SCREEN_HEIGHT - 100  # Maximum Y position
 
 class Particle:
     def __init__(self, x, y, color):
@@ -91,31 +92,56 @@ class Bird:
         # Simple wing
         pygame.draw.circle(screen, (255, 200, 0), (int(self.x + 5), int(self.y + BIRD_HEIGHT // 2)), 8)
 
-class Pipe:
+class Enemy:
     def __init__(self, x):
         self.x = x
-        self.height = random.randint(100, SCREEN_HEIGHT - PIPE_GAP - 100)
+        self.y = random.randint(ENEMY_SPAWN_MIN, ENEMY_SPAWN_MAX)
         self.passed = False
-        self.top_rect = pygame.Rect(self.x, 0, PIPE_WIDTH, self.height)
-        self.bottom_rect = pygame.Rect(self.x, self.height + PIPE_GAP, PIPE_WIDTH, SCREEN_HEIGHT - self.height - PIPE_GAP)
+        self.rect = pygame.Rect(self.x, self.y, ENEMY_SIZE, ENEMY_SIZE)
+        # Add some variation to enemy movement
+        self.bob_offset = random.uniform(0, 2 * math.pi)
+        self.bob_speed = random.uniform(0.05, 0.1)
+        self.bob_amplitude = random.randint(20, 40)
+        self.initial_y = self.y
+        self.frame = 0
 
     def update(self):
-        self.x -= PIPE_VELOCITY
-        self.top_rect.x = self.x
-        self.bottom_rect.x = self.x
+        self.x -= ENEMY_VELOCITY
+        # Add bobbing motion
+        self.frame += 1
+        self.y = self.initial_y + math.sin(self.frame * self.bob_speed + self.bob_offset) * self.bob_amplitude
+        self.rect.x = self.x
+        self.rect.y = self.y
 
     def draw(self, screen):
-        pygame.draw.rect(screen, GREEN, self.top_rect)
-        pygame.draw.rect(screen, GREEN, self.bottom_rect)
-        # Pipe caps
-        pygame.draw.rect(screen, (0, 150, 0), (self.x - 5, self.height - 20, PIPE_WIDTH + 10, 20))
-        pygame.draw.rect(screen, (0, 150, 0), (self.x - 5, self.height + PIPE_GAP, PIPE_WIDTH + 10, 20))
+        # Draw enemy as a red circular creature with spikes
+        center_x = int(self.x + ENEMY_SIZE // 2)
+        center_y = int(self.y + ENEMY_SIZE // 2)
+
+        # Draw spikes around the enemy
+        num_spikes = 8
+        for i in range(num_spikes):
+            angle = (2 * math.pi * i / num_spikes) + (self.frame * 0.05)
+            spike_length = ENEMY_SIZE // 2 + 5
+            end_x = center_x + math.cos(angle) * spike_length
+            end_y = center_y + math.sin(angle) * spike_length
+            pygame.draw.line(screen, (150, 0, 0), (center_x, center_y), (int(end_x), int(end_y)), 3)
+
+        # Main body
+        pygame.draw.circle(screen, RED, (center_x, center_y), ENEMY_SIZE // 2)
+
+        # Eyes
+        eye_offset = 6
+        pygame.draw.circle(screen, WHITE, (center_x - eye_offset, center_y - 3), 4)
+        pygame.draw.circle(screen, WHITE, (center_x + eye_offset, center_y - 3), 4)
+        pygame.draw.circle(screen, BLACK, (center_x - eye_offset, center_y - 3), 2)
+        pygame.draw.circle(screen, BLACK, (center_x + eye_offset, center_y - 3), 2)
 
     def is_off_screen(self):
-        return self.x < -PIPE_WIDTH
+        return self.x < -ENEMY_SIZE
 
     def collides_with(self, bird):
-        return bird.rect.colliderect(self.top_rect) or bird.rect.colliderect(self.bottom_rect)
+        return bird.rect.colliderect(self.rect)
 
 class Game:
     def __init__(self):
@@ -128,7 +154,7 @@ class Game:
 
     def reset(self):
         self.bird = Bird()
-        self.pipes = [Pipe(SCREEN_WIDTH + 200)]
+        self.enemies = [Enemy(SCREEN_WIDTH + 200)]
         self.score = 0
         self.game_over = False
         self.game_started = False
@@ -170,27 +196,27 @@ class Game:
                 self.create_collision_particles(self.bird.x + BIRD_WIDTH // 2, self.bird.y + BIRD_HEIGHT // 2)
             self.game_over = True
 
-        # Update pipes
-        for pipe in self.pipes:
-            pipe.update()
+        # Update enemies
+        for enemy in self.enemies:
+            enemy.update()
 
             # Check collision
-            if pipe.collides_with(self.bird):
+            if enemy.collides_with(self.bird):
                 if not self.game_over:
                     self.create_collision_particles(self.bird.x + BIRD_WIDTH // 2, self.bird.y + BIRD_HEIGHT // 2)
                 self.game_over = True
 
-            # Check if bird passed the pipe
-            if not pipe.passed and pipe.x + PIPE_WIDTH < self.bird.x:
-                pipe.passed = True
+            # Check if bird passed the enemy
+            if not enemy.passed and enemy.x + ENEMY_SIZE < self.bird.x:
+                enemy.passed = True
                 self.score += 1
 
-        # Remove off-screen pipes
-        self.pipes = [pipe for pipe in self.pipes if not pipe.is_off_screen()]
+        # Remove off-screen enemies
+        self.enemies = [enemy for enemy in self.enemies if not enemy.is_off_screen()]
 
-        # Add new pipes
-        if len(self.pipes) == 0 or self.pipes[-1].x < SCREEN_WIDTH - 300:
-            self.pipes.append(Pipe(SCREEN_WIDTH))
+        # Add new enemies at random intervals
+        if len(self.enemies) == 0 or self.enemies[-1].x < SCREEN_WIDTH - random.randint(200, 400):
+            self.enemies.append(Enemy(SCREEN_WIDTH))
 
     def create_collision_particles(self, x, y):
         """Create an explosion of particles at collision point"""
@@ -205,9 +231,9 @@ class Game:
         # Background
         self.screen.fill(BLUE)
 
-        # Draw pipes
-        for pipe in self.pipes:
-            pipe.draw(self.screen)
+        # Draw enemies
+        for enemy in self.enemies:
+            enemy.draw(self.screen)
 
         # Draw particles (before bird so they appear behind)
         for particle in self.particles:
