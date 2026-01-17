@@ -33,6 +33,10 @@ JUMP_STRENGTH = -10
 PROJECTILE_SIZE = 6
 PROJECTILE_SPEED = 8
 PROJECTILE_COLOR = (255, 255, 100)
+HEAT_PER_SHOT = 25  # Heat added per shot
+HEAT_COOLDOWN_DELAY = 60  # Frames before cooldown starts (1 second at 60 FPS)
+HEAT_COOLDOWN_RATE = 1.5  # Heat reduced per frame during cooldown
+MAX_HEAT = 100  # Maximum heat before overheat
 
 # Enemy settings
 ENEMY_SIZE_MIN = 20  # Minimum enemy size
@@ -295,6 +299,8 @@ class Game:
         self.game_over = False
         self.game_started = False
         self.particles = []
+        self.heat = 0  # Current heat level
+        self.heat_cooldown_timer = 0  # Timer for when cooldown starts
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -310,8 +316,10 @@ class Game:
                         self.reset()
                 if event.key == pygame.K_x:
                     # Fire projectile
-                    if self.game_started and not self.game_over:
+                    if self.game_started and not self.game_over and self.heat < MAX_HEAT:
                         self.shoot_projectile()
+                        self.heat = min(MAX_HEAT, self.heat + HEAT_PER_SHOT)
+                        self.heat_cooldown_timer = HEAT_COOLDOWN_DELAY  # Reset cooldown timer
                 if event.key == pygame.K_ESCAPE:
                     return False
         return True
@@ -332,6 +340,15 @@ class Game:
 
         if not self.game_started or self.game_over:
             return
+
+        # Update heat cooldown system
+        if self.heat > 0:
+            if self.heat_cooldown_timer > 0:
+                # Still waiting before cooldown starts
+                self.heat_cooldown_timer -= 1
+            else:
+                # Cooldown active - reduce heat
+                self.heat = max(0, self.heat - HEAT_COOLDOWN_RATE)
 
         # Update bird
         self.bird.update()
@@ -420,6 +437,42 @@ class Game:
                 color = random.choice([WHITE, (200, 200, 200)])
             self.particles.append(Particle(x, y, color))
 
+    def draw_cooldown_gauge(self):
+        """Draw the heat gauge"""
+        # Gauge position and size
+        gauge_x = 10
+        gauge_y = 10
+        gauge_width = 100
+        gauge_height = 15
+
+        # Background (empty gauge)
+        pygame.draw.rect(self.screen, (50, 50, 50), (gauge_x, gauge_y, gauge_width, gauge_height))
+        pygame.draw.rect(self.screen, WHITE, (gauge_x, gauge_y, gauge_width, gauge_height), 2)
+
+        # Fill (heat level)
+        heat_percentage = self.heat / MAX_HEAT
+        fill_width = int(gauge_width * heat_percentage)
+
+        # Color changes from green (cool) to red (overheated)
+        if heat_percentage < 0.5:
+            # Green to yellow
+            color = (int(255 * heat_percentage * 2), 255, 0)
+        else:
+            # Yellow to red
+            color = (255, int(255 * (1 - heat_percentage) * 2), 0)
+
+        if fill_width > 0:
+            pygame.draw.rect(self.screen, color, (gauge_x, gauge_y, fill_width, gauge_height))
+
+        # Label changes based on heat state
+        if self.heat >= MAX_HEAT:
+            label_text = self.small_font.render("OVERHEAT!", True, RED)
+        elif self.heat > MAX_HEAT * 0.7:
+            label_text = self.small_font.render("HEAT", True, ORANGE)
+        else:
+            label_text = self.small_font.render("HEAT", True, WHITE)
+        self.screen.blit(label_text, (gauge_x + gauge_width + 10, gauge_y - 5))
+
     def draw(self):
         # Background
         self.screen.fill(BLUE)
@@ -442,6 +495,10 @@ class Game:
         # Draw score
         score_text = self.font.render(str(self.score), True, WHITE)
         self.screen.blit(score_text, (SCREEN_WIDTH // 2 - 20, 50))
+
+        # Draw cooldown gauge
+        if self.game_started and not self.game_over:
+            self.draw_cooldown_gauge()
 
         # Draw instructions or game over
         if not self.game_started:
