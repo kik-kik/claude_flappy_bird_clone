@@ -93,27 +93,97 @@ Each type is randomly selected when spawned, creating visual diversity.
 
 ---
 
+## Prompt 10: Add Drop and Power-Up System
+**Prompt:** "can we add drops after an enemy dies, this should will up a bar and when full give the player an ability to pick a powerup such as a shield, double projective with each shot, faster firing cool down"
+
+**Summary:** Implemented a comprehensive drop and power-up system:
+- **Drops**: Killed enemies spawn glowing green collectible gems
+- **Power-Up Bar**: Fills as drops are collected (located below heat gauge)
+- **Power-Up Menu**: Opens when bar is full, pauses game for selection
+- **Three Power-Ups**:
+  1. **Shield** (5 seconds): Temporary invincibility from enemies and walls
+  2. **Double Shot** (10 seconds): Fires 3 projectiles simultaneously
+  3. **Fast Fire** (10 seconds): 50% reduced heat buildup
+- **Visual Feedback**: Active power-up icons shown on right side with duration bars
+- **Selection**: Press 1, 2, or 3 to choose power-up when menu appears
+
+---
+
+## Prompt 11: Add Bouncing Physics to Drops
+**Prompt:** "can you make the power up energy bounce off the top, bottm, and the right side of the screen? When it passes through the left side of the screen it should be destroyed"
+
+**Summary:** Modified drop physics for more dynamic gameplay:
+- Drops now have random velocity in both X and Y directions
+- Bounce off top, bottom, and right edges of screen
+- Only destroyed when passing through left edge
+- Creates chase-based collection mechanic where drops bounce around before escaping
+
+---
+
+## Prompt 12: Adjust Drop Speed and Pickup Range
+**Prompt:** "can you make the power ups move a little slower and also make the pick-up range a little bit bigger so that it is a bit easier for the player to pick it up during the game"
+
+**Summary:** Made drops easier to collect:
+- **Slower Movement**: Reduced velocity from (-3 to -1, -4 to 4) to (-2 to -0.5, -2 to 2)
+- **Larger Pickup Range**: Increased from 12 pixels to 25 pixels
+- **Distance-Based Collision**: Changed from rectangle to distance-based detection for smoother collection experience
+
+---
+
+## Prompt 13: Progressive Power-Up Difficulty
+**Prompt:** "can we make a tweak so that the number of power up drops required to get an upgrade goes up with each time we get a power up? Starting with only needing two at the beginning?"
+
+**Summary:** Implemented scaling power-up requirements:
+- **Starting Requirement**: Only 2 drops needed for first power-up (reduced from 5)
+- **Progressive Increase**: Each power-up activation increases requirement by 1
+  - 1st power-up: 2 drops
+  - 2nd power-up: 3 drops
+  - 3rd power-up: 4 drops
+  - And so on...
+- **Visual Counter**: Bar label shows "X/Y" format (e.g., "2/3" = collected 2, need 3 total)
+- **Dynamic Scaling**: Bar fills proportionally based on current requirement
+
+---
+
 ## Game Features Summary
 
 ### Core Mechanics
 - Flappy Bird style gameplay with gravity and jump controls (SPACE)
 - Projectile shooting system (X key)
 - Heat management system preventing spam-firing
+- Drop collection system with bouncing physics
+- Progressive power-up system with scaling difficulty
 
 ### Visual Effects
 - Particle explosions on all collisions
 - Color-matched enemy destruction particles
 - Fading and gravity-affected particles
+- Glowing pulsing drop gems
+- Shield visual effect around player
 
 ### Enemy System
 - Three enemy types with unique visual designs
 - Random size, speed, and movement patterns
 - Bobbing/floating motion with sine waves
 - Rotating animations and effects
+- Drop glowing gems when destroyed by projectiles
+
+### Power-Up System
+- **Drops**: Bouncing collectibles with physics (bounce off top/bottom/right, destroyed at left edge)
+- **Collection**: Large pickup range (25 pixels) for easier gameplay
+- **Progressive Requirements**: Starts at 2 drops, increases by 1 each time
+- **Three Power-Ups**:
+  - Shield: 5 seconds invincibility
+  - Double Shot: 10 seconds triple projectile firing
+  - Fast Fire: 10 seconds 50% heat reduction
+- **Menu System**: Pause-on-full selection interface (keys 1, 2, 3)
 
 ### UI Elements
 - Score display (center top)
 - Heat gauge (top-left corner)
+- Power-up bar with X/Y counter (below heat gauge)
+- Active power-up icons (right side with duration bars)
+- Power-up selection menu (semi-transparent overlay)
 - Start/restart instructions
 - Game over screen
 
@@ -124,4 +194,5 @@ Each type is randomly selected when spawned, creating visual diversity.
 ### Controls
 - SPACE: Jump / Start game / Restart
 - X: Fire projectile
+- 1/2/3: Select power-up (when menu is active)
 - ESC: Quit game
